@@ -2,18 +2,19 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, s
 import requests
 from datetime import datetime
 from spellchecker import SpellChecker
-
+import os
 app = Flask(__name__)
 spell = SpellChecker()
 app.secret_key = "my_super_secret_key_123"
 
 # PUT YOUR RAPIDAPI KEY HERE
-API_KEY = "a9b7cf7d48mshe38db7f2824dc26p18f5ecjsnf14aa9a95621"
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "1234"
-PRICER_API_KEY = "a9b7cf7d48mshe38db7f2824dc26p18f5ecjsnf14aa9a95621"
-PRODUCT_SEARCH_KEY = "a9b7cf7d48mshe38db7f2824dc26p18f5ecjsnf14aa9a95621"
-FLIPKART_API_KEY = "a9b7cf7d48mshe38db7f2824dc26p18f5ecjsnf14aa9a95621"
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+API_KEY = ""
+PRICER_API_KEY = ""
+PRODUCT_SEARCH_KEY = ""
+FLIPKART_API_KEY = "a"
 
 
 
