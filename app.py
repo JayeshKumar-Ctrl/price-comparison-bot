@@ -14,7 +14,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 API_KEY = ""
 PRICER_API_KEY = ""
 PRODUCT_SEARCH_KEY = ""
-FLIPKART_API_KEY = "a"
+FLIPKART_API_KEY = ""
 
 
 
@@ -95,9 +95,57 @@ def search_flipkart(product):
 def home():
     return render_template("index.html")
 
+#---------------save_relevant-------------
+def is_relevant(search, title):
+
+    search = search.lower().strip()
+    title = title.lower().strip()
+
+    search_words = search.split()
+    title_words = title.split()
+
+    common_words = [
+        "iphone", "samsung", "oneplus", "nokia", "redmi",
+        "laptop", "notebook", "hp", "dell", "lenovo", "asus",
+        "mobile", "phone", "smartphone",
+        "nike", "adidas", "puma", "shoes"
+    ]
+
+    score = 0
+
+    # Direct word match
+    for word in search_words:
+
+        if len(word) < 3:
+            continue
+
+        if word in title:
+            score += 2
+
+
+    # Category / Brand match
+    for word in common_words:
+
+        if word in search and word in title:
+            score += 2
+
+
+    # Partial match
+    for s_word in search_words:
+
+        for t_word in title_words:
+
+            if len(s_word) >= 4 and s_word[:4] == t_word[:4]:
+                score += 1
+
+
+    # Accept if score is good
+    if score >= 2:
+        return True
+
+    return False
 
 # ---------------- SEARCH ----------------
-
 @app.route("/search")
 def search():
 
@@ -108,7 +156,8 @@ def search():
     if not raw_item or len(raw_item.strip()) < 2:
         return jsonify({"error": "Please enter valid product name"})
 
-    # AI correction
+
+    # AI Spell Correction
     item = fix_spelling(raw_item)
 
     save_log(f"Corrected: {raw_item} -> {item}")
@@ -122,15 +171,28 @@ def search():
     except:
         amazon_data = {}
 
+
     if "data" in amazon_data and "products" in amazon_data["data"]:
 
-        for product in amazon_data["data"]["products"][:6]:
+        for product in amazon_data["data"]["products"][:10]:
+
+            title = product.get("product_title", "")
+
+            if not title:
+                continue
+
+
+            # Relevance filter
+            if not is_relevant(item, title):
+                continue
+
 
             price_text = product.get("product_price")
 
             if not price_text:
                 continue
 
+
             clean = price_text.replace("₹", "").replace(",", "").strip()
 
             try:
@@ -138,28 +200,42 @@ def search():
             except:
                 continue
 
+
             results.append({
-                "name": product.get("product_title", ""),
+                "name": title,
                 "price": price,
                 "link": product.get("product_url", ""),
                 "site": "Amazon"
             })
 
 
-    # ---------------- FLIPKART ----------------
+    # ---------------- FLIPKART (Optional) ----------------
     try:
         flip_data = search_flipkart(item)
     except:
         flip_data = {}
-    print("FLIPKART DATA:", flip_data)
+
+
     if "data" in flip_data and "products" in flip_data["data"]:
 
-        for product in flip_data["data"]["products"][:6]:
+        for product in flip_data["data"]["products"][:10]:
+
+            title = product.get("title", "")
+
+            if not title:
+                continue
+
+
+            # Relevance filter
+            if not is_relevant(item, title):
+                continue
+
 
             price_text = product.get("price")
 
             if not price_text:
                 continue
+
 
             clean = price_text.replace("₹", "").replace(",", "").strip()
 
@@ -168,8 +244,9 @@ def search():
             except:
                 continue
 
+
             results.append({
-                "name": product.get("title", ""),
+                "name": title,
                 "price": price,
                 "link": product.get("url", ""),
                 "site": "Flipkart"
@@ -178,16 +255,18 @@ def search():
 
     # ---------------- FINAL ----------------
     if len(results) == 0:
-        return jsonify({"error": "No product found"})
+        return jsonify({"error": "No relevant product found"})
 
 
+    # Sort cheapest first
     results = sorted(results, key=lambda x: x["price"])
 
 
-    save_log(f"Amazon + Flipkart success: {item} ({len(results)})")
+    save_log(f"Search success: {item} ({len(results)} results)")
 
 
     return jsonify(results)
+
 
 #------------admin panel------------------
 
