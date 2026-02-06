@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Price Comparison Bot</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+
+        .search-box {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        input {
+            padding: 10px;
+            width: 280px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 18px;
+            font-size: 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        table {
+            width: 100%;
+            background: white;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+
+        th {
+            background: #343a40;
+            color: white;
+        }
+
+        tr:hover {
+            background: #f1f1f1;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Smart Price Comparison Bot</h1>
+
+<div class="search-box">
+
+    <input type="text" id="item" placeholder="Enter product name">
+
+    <button onclick="searchProduct()">Search</button>
+
+</div>
+
+
+<table id="resultTable" style="display:none;">
+
+    <thead>
+        <tr>
+            <th>No</th>
+            <th>Product Name</th>
+            <th>Website</th>
+            <th>Price (₹)</th>
+            <th>Link</th>
+        </tr>
+    </thead>
+
+    <tbody id="tableBody">
+    </tbody>
+
+</table>
+
+
+<script>
+
+function searchProduct() {
+
+    let item = document.getElementById("item").value;
+
+    if(item.length < 2){
+        alert("Please enter valid product name");
+        return;
+    }
+
+    fetch("/search?item=" + item)
+
+    .then(response => response.json())
+
+    .then(data => {
+
+        let table = document.getElementById("resultTable");
+        let body = document.getElementById("tableBody");
+
+        body.innerHTML = "";
+
+        if(data.error){
+            alert(data.error);
+            return;
+        }
+
+        table.style.display = "table";
+
+        data.forEach((product, index) => {
+
+            let row = body.insertRow();
+
+            row.insertCell(0).innerText = index + 1;
+
+            row.insertCell(1).innerText = product.name;
+
+            row.insertCell(2).innerText = product.site;
+
+            row.insertCell(3).innerText = product.price;
+
+            let linkCell = row.insertCell(4);
+
+            let link = document.createElement("a");
+
+            link.href = product.link;
+
+            link.target = "_blank";
+
+            link.innerText = "Open";
+
+            linkCell.appendChild(link);
+
+        });
+
+    })
+
+    .catch(() => {
+        alert("Server error. Try again later.");
+    });
+
+}
+
+</script>
+
+</body>
+</html>
+

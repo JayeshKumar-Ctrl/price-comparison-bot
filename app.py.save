@@ -1,0 +1,107 @@
+from flask import Flask, request, jsonify
+import requests
+
+app = Flask(__name__)
+
+# PUT YOUR RAPIDAPI KEY HERE
+API_KEY ="a9b7cf7d48mshe38db7f2824dc26p18f5ecjsnf14aa9a95621"
+
+
+def search_amazon(product):
+
+    url = "https://real-time-amazon-data.p.rapidapi.com/search"
+
+    headers = {
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com"
+    }
+
+    params = {
+        "query": product,
+        "page": "1",
+        "country": "IN"
+    }
+
+    response = requests.get(url, headers=headers, params=params)
+
+    return response.json()
+
+
+@app.route("/")
+def home():
+    return "Smart Price Bot is Running"
+
+
+@app.route("/search")
+def search():
+
+    item = request.args.get("item")
+
+    # Check empty input
+    if not item or len(item.strip()) < 2:
+        return jsonify({
+            "error": "Please enter a valid product name"
+        })
+
+    item_lower = item.lower()
+
+    try:
+        data = search_amazon(item)
+    except:
+        return jsonify({
+            "error": "Failed to connect to shopping server"
+        })
+
+    # Validate API response
+    if "data" not in data or "products" not in data["data"]:
+        return jsonify({
+            "error": "No data received from server"
+        })
+
+    products = data["data"]["products"]
+
+    if len(products) == 0:
+        return jsonify({
+            "error": "No product found for this item"
+        })
+
+    results = []
+
+    for product in products[:15]:
+
+        title = product.get("product_title", "").lower()
+
+        # Check keyword match
+        if item_lower not in title:
+            continue
+
+        if "product_price" not in product:
+            continue
+
+        price_text = product["product_price"]
+
+        clean_price = price_text.replace("₹", "").replace(",", "").strip()
+
+        try:
+            price_number = int(clean_price)
+        except:
+            continue
+
+        results.append({
+            "name": product.get("product_title", "Unknown"),
+            "price": price_number,
+            "link": product.get("product_url", "")
+        })
+
+    # If no matching products
+    if len(results) == 0:
+        return jsonify({
+            "error": "No relevant product found for this search"
+        })
+
+    # Sort by cheapest price
+    results = sorted(results, key=lambda x: x["price"])
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
