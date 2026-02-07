@@ -125,14 +125,15 @@ def is_relevant(search, title):
 @app.route("/search", methods=["GET", "POST"])
 def search():
 
-    # Accept both GET and POST
     if request.method == "POST":
         query = request.form.get("query")
     else:
         query = request.args.get("item")
 
+    print("SEARCH QUERY:", query)
+
     if not query:
-        return render_template("index.html", results=[], error="Empty search")
+        return jsonify({"error": "Empty search"})
 
     url = "https://real-time-product-search.p.rapidapi.com/search"
 
@@ -148,16 +149,24 @@ def search():
     }
 
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=20)
 
-        print("STATUS:", response.status_code)
-        print("TEXT:", response.text)
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=20
+        )
+
+        print("STATUS CODE:", response.status_code)
+        print("RAW TEXT:", response.text)
 
         data = response.json()
 
-        print("FULL API DATA:", data)
+        print("FULL API RESPONSE:", data)
 
         products = data.get("data", {}).get("products", [])
+
+        print("TOTAL PRODUCTS:", len(products))
 
         results = []
 
@@ -182,17 +191,18 @@ def search():
                 "store": store
             })
 
+        print("FINAL RESULTS:", results)
+
         return render_template("index.html", results=results)
 
     except Exception as e:
 
-        print("ERROR:", e)
+        print("🔥 SEARCH ERROR:", str(e))
 
-        return render_template(
-            "index.html",
-            results=[],
-            error="Server error. Try again."
-        )
+        return jsonify({
+            "error": "Backend crash",
+            "details": str(e)
+        })
 
 #------------admin panel------------------
 
