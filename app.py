@@ -98,52 +98,43 @@ def home():
 #---------------save_relevant-------------
 def is_relevant(search, title):
 
+    if not search or not title:
+        return False
+
     search = search.lower().strip()
     title = title.lower().strip()
 
     search_words = search.split()
     title_words = title.split()
 
-    common_words = [
-        "iphone", "samsung", "oneplus", "nokia", "redmi",
-        "laptop", "notebook", "hp", "dell", "lenovo", "asus",
-        "mobile", "phone", "smartphone",
-        "nike", "adidas", "puma", "shoes"
-    ]
-
     score = 0
 
-    # Direct word match
+    # Direct match
     for word in search_words:
 
         if len(word) < 3:
             continue
 
         if word in title:
-            score += 2
+            score += 3   # Strong match
 
 
-    # Category / Brand match
-    for word in common_words:
-
-        if word in search and word in title:
-            score += 2
-
-
-    # Partial match
+    # Partial match (prefix)
     for s_word in search_words:
 
         for t_word in title_words:
 
-            if len(s_word) >= 4 and s_word[:4] == t_word[:4]:
+            if len(s_word) >= 3 and t_word.startswith(s_word[:3]):
                 score += 1
 
 
-    # Accept if score is good
-    if score >= 2:
-        return True
+    # Fallback: whole search in title
+    if search in title:
+        score += 3
 
-    return False
+
+    # Accept if score >= 2
+    return score >= 2
 
 # ---------------- SEARCH ----------------
 @app.route("/search")
