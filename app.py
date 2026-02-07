@@ -98,9 +98,6 @@ def home():
 #---------------save_relevant-------------
 def is_relevant(search, title):
 
-    if not search or not title:
-        return False
-
     search = search.lower().strip()
     title = title.lower().strip()
 
@@ -109,147 +106,166 @@ def is_relevant(search, title):
 
     score = 0
 
-    # Direct match
+    # Direct word match
     for word in search_words:
 
-        if len(word) < 3:
+        if len(word) < 2:
             continue
 
         if word in title:
-            score += 3   # Strong match
+            score += 3
 
 
-    # Partial match (prefix)
+    # Partial match (iphone → ipho, lap → lapt)
     for s_word in search_words:
 
         for t_word in title_words:
 
-            if len(s_word) >= 3 and t_word.startswith(s_word[:3]):
-                score += 1
+            if len(s_word) >= 3 and len(t_word) >= 3:
+                if s_word[:3] == t_word[:3]:
+                    score += 1
 
 
-    # Fallback: whole search in title
-    if search in title:
-        score += 3
+    # Brand / category match
+    common_words = [
+        "iphone", "samsung", "oneplus", "nokia", "redmi",
+        "laptop", "notebook", "hp", "dell", "lenovo", "asus",
+        "mobile", "phone", "smartphone",
+        "nike", "adidas", "puma", "shoes"
+    ]
+
+    for word in common_words:
+
+        if word in search and word in title:
+            score += 2
 
 
-    # Accept if score >= 2
-    return score >= 2
+    # Final decision
+    if score >= 2:
+        return True
+
+    return False
 
 # ---------------- SEARCH ----------------
 @app.route("/search")
 def search():
 
-    raw_item = request.args.get("item")
+    item = request.args.get("item")
 
-    save_log(f"Search: {raw_item}")
-
-    if not raw_item or len(raw_item.strip()) < 2:
-        return jsonify({"error": "Please enter valid product name"})
+    if not item:
+        return jsonify({"error": "No item provided"})
 
 
-    # AI Spell Correction
-    item = fix_spelling(raw_item)
+    url = "https://real-time-product-search.p.rapidapi.com/search-v2"
 
-    save_log(f"Corrected: {raw_item} -> {item}")
+    headers = {
+        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
+        "x-rapidapi-host": "https://real-time-product-search.p.rapidapi.com/search-v2"
+    }
+
+
+    try:
+        response = requests.get(url, headers=headers, params={"q": item}, timeout=15)
+        data = response.json()
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
+    # DEBUG (very important)
+    print("FULL API RESPONSE:", data)
+
+
+    # Try to extract products safely (works with most APIs)
+
+    products = []
+
+    if isinstance(data, dict):
+
+        if "products" in data:
+            products = data["products"]
+
+        elif "data" in data and "products" in data["data"]:
+            products = data["data"]["products"]
+
+        elif "results" in data:
+            products = data["results"]
+
+        elif "items" in data:
+            products = data["items"]
+
+
+    if not products:
+        return jsonify({"error": "No products from API"})
+
 
     results = []
 
 
-    # ---------------- AMAZON ----------------
-    try:
-        amazon_data = search_amazon(item)
-    except:
-        amazon_data = {}
+    for product in products:
+
+        title = (
+            product.get("title")
+            or product.get("name")
+            or product.get("product_title")
+            or ""
+        )
 
 
-    if "data" in amazon_data and "products" in amazon_data["data"]:
-
-        for product in amazon_data["data"]["products"][:10]:
-
-            title = product.get("product_title", "")
-
-            if not title:
-                continue
+        if not title:
+            continue
 
 
-            # Relevance filter
-            if not is_relevant(item, title):
-                continue
+        # Relevance filter
+        if not is_relevant(item, title):
+            continue
 
 
-            price_text = product.get("product_price")
-
-            if not price_text:
-                continue
-
-
-            clean = price_text.replace("₹", "").replace(",", "").strip()
-
-            try:
-                price = int(clean)
-            except:
-                continue
+        # Price handling
+        price_text = (
+            product.get("price")
+            or product.get("price_value")
+            or product.get("sale_price")
+        )
 
 
-            results.append({
-                "name": title,
-                "price": price,
-                "link": product.get("product_url", ""),
-                "site": "Amazon"
-            })
+        if not price_text:
+            continue
 
 
-    # ---------------- FLIPKART (Optional) ----------------
-    try:
-        flip_data = search_flipkart(item)
-    except:
-        flip_data = {}
+        try:
+            clean = str(price_text).replace("₹", "").replace(",", "").strip()
+            price = int(float(clean))
+
+        except:
+            continue
 
 
-    if "data" in flip_data and "products" in flip_data["data"]:
-
-        for product in flip_data["data"]["products"][:10]:
-
-            title = product.get("title", "")
-
-            if not title:
-                continue
+        link = (
+            product.get("url")
+            or product.get("link")
+            or product.get("product_url")
+            or ""
+        )
 
 
-            # Relevance filter
-            if not is_relevant(item, title):
-                continue
+        site = product.get("source") or "Online Store"
 
 
-            price_text = product.get("price")
-
-            if not price_text:
-                continue
-
-
-            clean = price_text.replace("₹", "").replace(",", "").strip()
-
-            try:
-                price = int(clean)
-            except:
-                continue
+        results.append({
+            "name": title,
+            "price": price,
+            "link": link,
+            "site": site
+        })
 
 
-            results.append({
-                "name": title,
-                "price": price,
-                "link": product.get("url", ""),
-                "site": "Flipkart"
-            })
-
-
-    # ---------------- FINAL ----------------
-    if len(results) == 0:
+    # Final check
+    if not results:
         return jsonify({"error": "No relevant product found"})
 
 
-    # Sort cheapest first
+    # Sort by cheapest
     results = sorted(results, key=lambda x: x["price"])
 
 
@@ -257,7 +273,6 @@ def search():
 
 
     return jsonify(results)
-
 
 #------------admin panel------------------
 
