@@ -154,6 +154,8 @@ def search():
             return jsonify([])
 
         data = response.json()
+	print("FULL API RESPONSE:", data)
+
 
     except Exception as e:
         print("REQUEST ERROR:", e)
