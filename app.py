@@ -98,35 +98,24 @@ def search():
         else:
             query = request.args.get("item")
 
-        print("SEARCH QUERY:", query)
-
         if not query:
             return jsonify({"error": "Empty search"})
 
+        print("SEARCH:", query)
 
-        # Check API key
-        API_KEY = os.environ.get("RAPIDAPI_KEY")
-
-        if not API_KEY:
-            return jsonify({"error": "API key missing"})
-
-
-        # RapidAPI endpoint
+        # API URL
         url = "https://real-time-product-search.p.rapidapi.com/search"
 
-
         headers = {
-            "X-RapidAPI-Key": API_KEY,
+            "X-RapidAPI-Key": os.environ.get("RAPIDAPI_KEY"),
             "X-RapidAPI-Host": "real-time-product-search.p.rapidapi.com"
         }
-
 
         params = {
             "q": query,
             "country": "in",
             "language": "en"
         }
-
 
         # Call API
         response = requests.get(
@@ -136,26 +125,18 @@ def search():
             timeout=20
         )
 
-
         print("STATUS:", response.status_code)
+        print("TEXT:", response.text)
 
-
-        # If API failed
+        # Check response
         if response.status_code != 200:
-            return jsonify({
-                "error": "API failed",
-                "status": response.status_code,
-                "text": response.text
-            })
+            return jsonify({"error": "API failed"})
 
-
-        # Convert JSON safely
         data = response.json()
 
         print("FULL RESPONSE:", data)
 
-
-        # Get products safely (all formats)
+        # Get products safely
         products = []
 
         if "data" in data and "products" in data["data"]:
@@ -164,43 +145,31 @@ def search():
         elif "products" in data:
             products = data["products"]
 
-        elif "data" in data and "items" in data["data"]:
-            products = data["data"]["items"]
-
+        elif "results" in data:
+            products = data["results"]
 
         print("TOTAL PRODUCTS:", len(products))
 
-
         results = []
 
-
-        # Process products
         for item in products[:20]:
 
-            title = item.get("product_title") or item.get("title")
-
-            if not title:
-                continue
-
-
-            if not is_relevant(query, title):
-                continue
-
+            title = item.get("product_title") or item.get("title") or "No title"
 
             offer = item.get("offer", {})
-
 
             price = offer.get("price") or item.get("price")
 
             if not price:
                 continue
 
+            link = offer.get("offer_page_url") or item.get("link", "#")
 
-            link = offer.get("offer_page_url") or item.get("product_page_url") or "#"
+            store = offer.get("store_name") or item.get("source", "Unknown")
 
-
-            store = offer.get("store_name") or item.get("store") or "Unknown"
-
+            # Relevance filter
+            if not is_relevant(query, title):
+                continue
 
             results.append({
                 "title": title,
@@ -209,19 +178,16 @@ def search():
                 "store": store
             })
 
+        print("FINAL:", results)
 
-        print("FINAL RESULTS:", results)
+        if len(results) == 0:
+            return jsonify({"error": "No relevant products found"})
 
-
-        return render_template(
-            "index.html",
-            results=results
-        )
-
+        return render_template("index.html", results=results)
 
     except Exception as e:
 
-        print("SEARCH ERROR:", str(e))
+        print("ERROR:", str(e))
 
         return jsonify({
             "error": "Backend crash",
