@@ -98,49 +98,24 @@ def home():
 #---------------save_relevant-------------
 def is_relevant(search, title):
 
-    search = search.lower().strip()
-    title = title.lower().strip()
+    search = search.lower()
+    title = title.lower()
 
     search_words = search.split()
-    title_words = title.split()
 
     score = 0
 
-    # Direct word match
     for word in search_words:
 
         if len(word) < 2:
             continue
 
         if word in title:
-            score += 3
-
-
-    # Partial match (iphone → ipho, lap → lapt)
-    for s_word in search_words:
-
-        for t_word in title_words:
-
-            if len(s_word) >= 3 and len(t_word) >= 3:
-                if s_word[:3] == t_word[:3]:
-                    score += 1
-
-
-    # Brand / category match
-    common_words = [
-        "iphone", "samsung", "oneplus", "nokia", "redmi",
-        "laptop", "notebook", "hp", "dell", "lenovo", "asus",
-        "mobile", "phone", "smartphone",
-        "nike", "adidas", "puma", "shoes"
-    ]
-
-    for word in common_words:
-
-        if word in search and word in title:
             score += 2
 
+    if search in title:
+        score += 3
 
-    # Final decision
     if score >= 2:
         return True
 
@@ -153,104 +128,64 @@ def search():
     item = request.args.get("item")
 
     if not item:
-        return jsonify({"error": "No item provided"})
-
+        return jsonify([])
 
     url = "https://real-time-product-search.p.rapidapi.com/search-v2"
 
     headers = {
-        "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
-        "x-rapidapi-host": "https://real-time-product-search.p.rapidapi.com/search-v2"
+        "x-rapidapi-host": "real-time-product-search.p.rapidapi.com",
+        "x-rapidapi-key": os.environ.get("RAPIDAPI_KEY")
     }
 
+    params = {
+        "q": item,
+        "language": "en",
+        "page": 1,
+        "limit": 20,
+        "sort_by": "BEST_MATCH",
+        "product_condition": "ANY"
+    }
 
     try:
-        response = requests.get(url, headers=headers, params={"q": item}, timeout=15)
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+
+        if response.status_code != 200:
+            print("API ERROR:", response.text)
+            return jsonify([])
+
         data = response.json()
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        print("REQUEST ERROR:", e)
+        return jsonify([])
 
-
-    # DEBUG (very important)
-    print("FULL API RESPONSE:", data)
-
-
-    # Try to extract products safely (works with most APIs)
-
-    products = []
-
-    if isinstance(data, dict):
-
-        if "products" in data:
-            products = data["products"]
-
-        elif "data" in data and "products" in data["data"]:
-            products = data["data"]["products"]
-
-        elif "results" in data:
-            products = data["results"]
-
-        elif "items" in data:
-            products = data["items"]
-
-
-    if not products:
-        return jsonify({"error": "No products from API"})
-
+    products = data.get("data", {}).get("products", [])
 
     results = []
 
-
     for product in products:
 
-        title = (
-            product.get("title")
-            or product.get("name")
-            or product.get("product_title")
-            or ""
-        )
-
+        title = product.get("title", "")
 
         if not title:
             continue
 
-
-        # Relevance filter
         if not is_relevant(item, title):
             continue
 
+        price = product.get("price")
 
-        # Price handling
-        price_text = (
-            product.get("price")
-            or product.get("price_value")
-            or product.get("sale_price")
-        )
-
-
-        if not price_text:
+        if not price:
             continue
 
-
         try:
-            clean = str(price_text).replace("₹", "").replace(",", "").strip()
-            price = int(float(clean))
-
+            price = int(str(price).replace(",", "").replace("₹", "").strip())
         except:
             continue
 
+        link = product.get("product_url", "")
 
-        link = (
-            product.get("url")
-            or product.get("link")
-            or product.get("product_url")
-            or ""
-        )
-
-
-        site = product.get("source") or "Online Store"
-
+        site = product.get("source", "Unknown")
 
         results.append({
             "name": title,
@@ -259,18 +194,10 @@ def search():
             "site": site
         })
 
-
-    # Final check
     if not results:
-        return jsonify({"error": "No relevant product found"})
+        return jsonify([])
 
-
-    # Sort by cheapest
     results = sorted(results, key=lambda x: x["price"])
-
-
-    save_log(f"Search success: {item} ({len(results)} results)")
-
 
     return jsonify(results)
 
