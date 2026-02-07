@@ -122,86 +122,56 @@ def is_relevant(search, title):
     return False
 
 # ---------------- SEARCH ----------------
-@app.route("/search")
+@app.route("/search", methods=["POST"])
 def search():
+    query = request.form.get("query")
 
-    item = request.args.get("item")
-
-    if not item:
-        return jsonify([])
-
-    url = "https://real-time-product-search.p.rapidapi.com/search-v2"
+    url = "https://real-time-product-search.p.rapidapi.com/search"
 
     headers = {
-        "x-rapidapi-host": "real-time-product-search.p.rapidapi.com",
-        "x-rapidapi-key": os.environ.get("RAPIDAPI_KEY")
+        "X-RapidAPI-Key": os.environ.get("RAPIDAPI_KEY"),
+        "X-RapidAPI-Host": "real-time-product-search.p.rapidapi.com"
     }
 
     params = {
-        "q": item,
-        "language": "en",
-        "page": 1,
-        "limit": 20,
-        "sort_by": "BEST_MATCH",
-        "product_condition": "ANY"
+        "q": query,
+        "country": "us",
+        "language": "en"
     }
 
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=15)
-
-        if response.status_code != 200:
-            print("API ERROR:", response.text)
-            return jsonify([])
-
+        response = requests.get(url, headers=headers, params=params, timeout=20)
         data = response.json()
+
         print("FULL API RESPONSE:", data)
 
+        # ✅ Correct path
+        products = data.get("data", {}).get("products", [])
+
+        results = []
+
+        for item in products[:10]:
+
+            title = item.get("product_title", "No Title")
+
+            offer = item.get("offer", {})
+
+            price = offer.get("price", "N/A")
+            link = offer.get("offer_page_url", "#")
+            store = offer.get("store_name", "Unknown")
+
+            results.append({
+                "title": title,
+                "price": price,
+                "link": link,
+                "store": store
+            })
+
+        return render_template("index.html", results=results)
 
     except Exception as e:
-        print("REQUEST ERROR:", e)
-        return jsonify([])
-
-    products = data.get("data", {}).get("products", [])
-
-    results = []
-
-    for product in products:
-
-        title = product.get("title", "")
-
-        if not title:
-            continue
-
-        if not is_relevant(item, title):
-            continue
-
-        price = product.get("price")
-
-        if not price:
-            continue
-
-        try:
-            price = int(str(price).replace(",", "").replace("₹", "").strip())
-        except:
-            continue
-
-        link = product.get("product_url", "")
-
-        site = product.get("source", "Unknown")
-
-        results.append({
-            "name": title,
-            "price": price,
-            "link": link,
-            "site": site
-        })
-
-    if not results:
-        return jsonify([])
-
-    results = sorted(results, key=lambda x: x["price"])
-
-    return jsonify(results)
+        print("ERROR:", e)
+        return render_template("index.html", results=[], error=str(e))
 
 #------------admin panel------------------
 
