@@ -90,34 +90,30 @@ def home():
 @app.route("/search", methods=["GET", "POST"])
 def search():
 
+    if request.method == "POST":
+        query = request.form.get("query")
+    else:
+        query = request.args.get("item")
+
+    if not query:
+        return jsonify({"error": "Empty search"})
+
+    print("SEARCH QUERY:", query)
+
+    url = "https://real-time-product-search.p.rapidapi.com/search"
+
+    headers = {
+        "X-RapidAPI-Key": os.environ.get("RAPIDAPI_KEY"),
+        "X-RapidAPI-Host": "real-time-product-search.p.rapidapi.com"
+    }
+
+    params = {
+        "q": query,
+        "country": "in",
+        "language": "en"
+    }
+
     try:
-
-        # Get query
-        if request.method == "POST":
-            query = request.form.get("query")
-        else:
-            query = request.args.get("item")
-
-        if not query:
-            return jsonify({"error": "Empty search"})
-
-        print("SEARCH:", query)
-
-        # API URL
-        url = "https://real-time-product-search.p.rapidapi.com/search"
-
-        headers = {
-            "X-RapidAPI-Key": os.environ.get("RAPIDAPI_KEY"),
-            "X-RapidAPI-Host": "real-time-product-search.p.rapidapi.com"
-        }
-
-        params = {
-            "q": query,
-            "country": "in",
-            "language": "en"
-        }
-
-        # Call API
         response = requests.get(
             url,
             headers=headers,
@@ -126,9 +122,8 @@ def search():
         )
 
         print("STATUS:", response.status_code)
-        print("TEXT:", response.text)
+        print("RAW:", response.text)
 
-        # Check response
         if response.status_code != 200:
             return jsonify({"error": "API failed"})
 
@@ -136,17 +131,8 @@ def search():
 
         print("FULL RESPONSE:", data)
 
-        # Get products safely
-        products = []
-
-        if "data" in data and "products" in data["data"]:
-            products = data["data"]["products"]
-
-        elif "products" in data:
-            products = data["products"]
-
-        elif "results" in data:
-            products = data["results"]
+        # ✅ CORRECT parsing
+        products = data.get("data", [])
 
         print("TOTAL PRODUCTS:", len(products))
 
@@ -154,22 +140,20 @@ def search():
 
         for item in products[:20]:
 
-            title = item.get("product_title") or item.get("title") or "No title"
+            title = item.get("product_title", "")
+
+            if not is_relevant(query, title):
+                continue
 
             offer = item.get("offer", {})
 
-            price = offer.get("price") or item.get("price")
+            price = offer.get("price")
 
             if not price:
                 continue
 
-            link = offer.get("offer_page_url") or item.get("link", "#")
-
-            store = offer.get("store_name") or item.get("source", "Unknown")
-
-            # Relevance filter
-            if not is_relevant(query, title):
-                continue
+            link = offer.get("offer_page_url", "#")
+            store = offer.get("store_name", "Unknown")
 
             results.append({
                 "title": title,
@@ -178,22 +162,18 @@ def search():
                 "store": store
             })
 
-        print("FINAL:", results)
-
-        if len(results) == 0:
-            return jsonify({"error": "No relevant products found"})
+        print("FINAL RESULTS:", results)
 
         return render_template("index.html", results=results)
 
     except Exception as e:
 
-        print("ERROR:", str(e))
+        print("SEARCH ERROR:", str(e))
 
         return jsonify({
             "error": "Backend crash",
             "details": str(e)
         })
-
 
 # ================= ADMIN =================
 
