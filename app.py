@@ -122,9 +122,17 @@ def is_relevant(search, title):
     return False
 
 # ---------------- SEARCH ----------------
-@app.route("/search", methods=["POST"])
+@app.route("/search", methods=["GET", "POST"])
 def search():
-    query = request.form.get("query")
+
+    # Accept both GET and POST
+    if request.method == "POST":
+        query = request.form.get("query")
+    else:
+        query = request.args.get("item")
+
+    if not query:
+        return render_template("index.html", results=[], error="Empty search")
 
     url = "https://real-time-product-search.p.rapidapi.com/search"
 
@@ -135,28 +143,35 @@ def search():
 
     params = {
         "q": query,
-        "country": "us",
+        "country": "in",
         "language": "en"
     }
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=20)
+
+        print("STATUS:", response.status_code)
+        print("TEXT:", response.text)
+
         data = response.json()
 
-        print("FULL API RESPONSE:", data)
+        print("FULL API DATA:", data)
 
-        # ✅ Correct path
         products = data.get("data", {}).get("products", [])
 
         results = []
 
-        for item in products[:10]:
+        for item in products[:15]:
 
-            title = item.get("product_title", "No Title")
+            title = item.get("product_title", "No title")
 
             offer = item.get("offer", {})
 
-            price = offer.get("price", "N/A")
+            price = offer.get("price")
+
+            if not price:
+                continue
+
             link = offer.get("offer_page_url", "#")
             store = offer.get("store_name", "Unknown")
 
@@ -170,8 +185,14 @@ def search():
         return render_template("index.html", results=results)
 
     except Exception as e:
+
         print("ERROR:", e)
-        return render_template("index.html", results=[], error=str(e))
+
+        return render_template(
+            "index.html",
+            results=[],
+            error="Server error. Try again."
+        )
 
 #------------admin panel------------------
 
