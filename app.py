@@ -1,76 +1,59 @@
-from flask import Flask, request, render_template, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request
 import requests
 import os
-from datetime import datetime
+import traceback
 
 app = Flask(__name__)
-app.secret_key = "super_secret_key_123"
 
-
-# ================== ENV VARIABLES ==================
-
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
-
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
-
-
-# ================== LOG SYSTEM ==================
-
-def save_log(msg):
-
-    time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    with open("logs.txt", "a") as f:
-        f.write(f"[{time}] {msg}\n")
-
-
-# ================== HOME ==================
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return render_template("index.html", results=[])
 
-
-# ================== SIMPLE RELEVANCE ==================
-
-def is_relevant(search, title):
-
-    search = search.lower()
-    title = title.lower()
-
-    return search in title
-
-
-# ================== SEARCH ==================
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
 
-    if request.method == "POST":
-        query = request.form.get("query")
-    else:
-        query = request.args.get("item")
-
-    if not query:
-        return render_template("index.html", results=[], error="Empty search")
-
-    API_KEY = os.environ.get("RAPIDAPI_KEY")
-
-    url = "https://real-time-amazon-data.p.rapidapi.com/search"
-
-    headers = {
-        "X-RapidAPI-Key": API_KEY,
-        "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com"
-    }
-
-    params = {
-        "query": query,
-        "page": "1",
-        "country": "IN"
-    }
-
     try:
+
+        # Get query
+        if request.method == "POST":
+            query = request.form.get("query")
+        else:
+            query = request.args.get("item")
+
+        print("SEARCH:", query)
+
+        if not query:
+            return render_template(
+                "index.html",
+                results=[],
+                error="Empty search"
+            )
+
+        API_KEY = os.environ.get("RAPIDAPI_KEY")
+
+        print("API KEY:", API_KEY)
+
+        if not API_KEY:
+            return render_template(
+                "index.html",
+                results=[],
+                error="API key missing"
+            )
+
+        url = "https://real-time-amazon-data.p.rapidapi.com/search"
+
+        headers = {
+            "X-RapidAPI-Key": API_KEY,
+            "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com"
+        }
+
+        params = {
+            "query": query,
+            "page": "1",
+            "country": "IN"
+        }
 
         response = requests.get(
             url,
@@ -79,33 +62,40 @@ def search():
             timeout=20
         )
 
+        print("STATUS:", response.status_code)
+        print("TEXT:", response.text[:500])
+
         if response.status_code != 200:
             return render_template(
                 "index.html",
                 results=[],
-                error="API Failed"
+                error="API failed"
             )
 
         data = response.json()
 
+        print("JSON OK")
+
         products = data.get("data", {}).get("products", [])
+
+        print("PRODUCT COUNT:", len(products))
 
         results = []
 
-        for item in products[:15]:
+        for item in products:
 
-            title = item.get("product_title", "No title")
+            title = item.get("product_title")
             price_text = item.get("product_price")
-            link = item.get("product_url", "#")
+            link = item.get("product_url")
 
-            if not price_text:
+            if not title or not price_text or not link:
                 continue
 
-            # Clean price: ₹1,23,456 → 123456
-            price = price_text.replace("₹", "").replace(",", "").strip()
+            # Clean price
+            price_text = price_text.replace("₹", "").replace(",", "").strip()
 
             try:
-                price = int(price)
+                price = int(price_text)
             except:
                 continue
 
@@ -116,6 +106,11 @@ def search():
                 "site": "Amazon"
             })
 
+            if len(results) >= 15:
+                break
+
+        print("FINAL RESULTS:", len(results))
+
         if not results:
             return render_template(
                 "index.html",
@@ -123,7 +118,6 @@ def search():
                 error="No products found"
             )
 
-        # Sort by cheapest
         results = sorted(results, key=lambda x: x["price"])
 
         return render_template(
@@ -133,7 +127,8 @@ def search():
 
     except Exception as e:
 
-        print("SEARCH ERROR:", e)
+        print("🔥 FULL ERROR 🔥")
+        traceback.print_exc()
 
         return render_template(
             "index.html",
@@ -142,79 +137,6 @@ def search():
         )
 
 
-# ================== ADMIN ==================
-
-@app.route("/admin")
-def admin():
-
-    if not session.get("logged_in"):
-        return redirect(url_for("login"))
-
-    try:
-        with open("logs.txt", "r") as f:
-            logs = f.read()
-    except:
-        logs = "No logs found"
-
-    return f"""
-    <h2>Admin Panel</h2>
-    <a href="/logout">Logout</a>
-    <pre>{logs}</pre>
-    """
-
-
-# ================== LOGIN ==================
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-
-    if request.method == "POST":
-
-        username = request.form.get("username")
-        password = request.form.get("password")
-
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-
-            session["logged_in"] = True
-            save_log("Admin logged in")
-
-            return redirect(url_for("admin"))
-
-        else:
-            return "Invalid credentials"
-
-    return """
-    <h2>Admin Login</h2>
-
-    <form method="post">
-
-        <input type="text" name="username" placeholder="Username" required><br><br>
-
-        <input type="password" name="password" placeholder="Password" required><br><br>
-
-        <button type="submit">Login</button>
-
-    </form>
-    """
-
-
-# ================== LOGOUT ==================
-
-@app.route("/logout")
-def logout():
-
-    session.pop("logged_in", None)
-
-    save_log("Admin logged out")
-
-    return redirect(url_for("login"))
-
-
-# ================== RUN ==================
-
 if __name__ == "__main__":
-
-    port = int(os.environ.get("PORT", 5000))
-
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(debug=True)
 
