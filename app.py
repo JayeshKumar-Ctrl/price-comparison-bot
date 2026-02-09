@@ -53,13 +53,9 @@ def search():
         query = request.args.get("item")
 
     if not query:
-        return "Empty search"
-
-    print("SEARCH:", query)
+        return render_template("index.html", results=[], error="Empty search")
 
     API_KEY = os.environ.get("RAPIDAPI_KEY")
-
-    print("API KEY:", API_KEY)
 
     url = "https://real-time-amazon-data.p.rapidapi.com/search"
 
@@ -83,24 +79,67 @@ def search():
             timeout=20
         )
 
-        print("STATUS:", response.status_code)
-        print("TEXT:", response.text[:1000])
-
         if response.status_code != 200:
-            return response.text
+            return render_template(
+                "index.html",
+                results=[],
+                error="API Failed"
+            )
 
         data = response.json()
 
-        print("JSON:", data)
+        products = data.get("data", {}).get("products", [])
 
-        # TEMP: Show raw data in browser
-        return jsonify(data)
+        results = []
+
+        for item in products[:15]:
+
+            title = item.get("product_title", "No title")
+            price_text = item.get("product_price")
+            link = item.get("product_url", "#")
+
+            if not price_text:
+                continue
+
+            # Clean price: ₹1,23,456 → 123456
+            price = price_text.replace("₹", "").replace(",", "").strip()
+
+            try:
+                price = int(price)
+            except:
+                continue
+
+            results.append({
+                "name": title,
+                "price": price,
+                "link": link,
+                "site": "Amazon"
+            })
+
+        if not results:
+            return render_template(
+                "index.html",
+                results=[],
+                error="No products found"
+            )
+
+        # Sort by cheapest
+        results = sorted(results, key=lambda x: x["price"])
+
+        return render_template(
+            "index.html",
+            results=results
+        )
 
     except Exception as e:
 
-        print("ERROR:", e)
+        print("SEARCH ERROR:", e)
 
-        return str(e)
+        return render_template(
+            "index.html",
+            results=[],
+            error="Server error"
+        )
 
 
 # ================== ADMIN ==================
