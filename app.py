@@ -4,17 +4,62 @@ from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
 
-# API Key
+# ==========================
+# Config
+# ==========================
+
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
 
-if not RAPIDAPI_KEY:
-    print("WARNING: API Key not found!")
+API_URL = "https://real-time-amazon-data.p.rapidapi.com/search"
 
+
+# ==========================
+# Home Page
+# ==========================
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
+
+# ==========================
+# Helper: Clean Title
+# ==========================
+
+def clean_title(title, max_len=80):
+    """
+    Shorten very long titles for UI
+    """
+    if len(title) > max_len:
+        return title[:max_len] + "..."
+    return title
+
+
+# ==========================
+# Helper: Relevance Check
+# ==========================
+
+def is_relevant(search, title):
+    """
+    Check if product matches search
+    """
+    search = search.lower()
+    title = title.lower()
+
+    words = search.split()
+
+    score = 0
+
+    for w in words:
+        if w in title:
+            score += 1
+
+    return score >= 1
+
+
+# ==========================
+# Search Route
+# ==========================
 
 @app.route("/search")
 def search():
@@ -22,9 +67,14 @@ def search():
     item = request.args.get("item")
 
     if not item:
-        return jsonify({"error": "Please enter product name"}), 400
+        return jsonify({"error": "No item provided"}), 400
 
-    url = "https://real-time-amazon-data.p.rapidapi.com/search"
+    print("SEARCH:", item)
+
+    if not RAPIDAPI_KEY:
+        print("ERROR: API KEY MISSING")
+        return jsonify({"error": "Server config error"}), 500
+
 
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -38,39 +88,66 @@ def search():
         "page": 1
     }
 
+
+    # ==========================
+    # Call API
+    # ==========================
+
     try:
+
         response = requests.get(
-            url,
+            API_URL,
             headers=headers,
             params=params,
-            timeout=15
+            timeout=20
         )
 
-    except requests.exceptions.RequestException as e:
-        print("API ERROR:", e)
-        return jsonify({"error": "Network problem"}), 500
+    except Exception as e:
+
+        print("REQUEST ERROR:", e)
+
+        return jsonify({"error": "API request failed"}), 500
+
+
+    print("STATUS:", response.status_code)
 
 
     if response.status_code != 200:
-        print("STATUS ERROR:", response.status_code)
-        return jsonify({"error": "API service unavailable"}), 500
 
+        print("BAD RESPONSE:", response.text)
+
+        return jsonify({"error": "API failed"}), 500
+
+
+    # ==========================
+    # Parse JSON
+    # ==========================
 
     try:
         data = response.json()
-    except:
-        return jsonify({"error": "Invalid response format"}), 500
+
+    except Exception as e:
+
+        print("JSON ERROR:", e)
+
+        return jsonify({"error": "Invalid API response"}), 500
 
 
     products = data.get("data", {}).get("products", [])
 
-    if not products:
-        return jsonify({"error": "No products found"}), 404
 
+    if not products:
+        return jsonify([])
+
+
+    # ==========================
+    # Build Results
+    # ==========================
 
     results = []
 
-    for p in products[:15]:
+
+    for p in products:
 
         title = p.get("product_title")
         price_text = p.get("product_price")
@@ -80,25 +157,53 @@ def search():
             continue
 
 
+        # Relevance filter
+        if not is_relevant(item, title):
+            continue
+
+
+        # Clean price
         clean = price_text.replace("₹", "").replace(",", "").strip()
 
         try:
             price = int(clean)
+
         except:
             continue
 
 
+        short_title = clean_title(title)
+
+
         results.append({
-            "name": title,
+            "name": short_title,
             "price": price,
             "link": link,
             "site": "Amazon"
         })
 
 
+        # Limit results
+        if len(results) >= 20:
+            break
+
+
+    # ==========================
+    # Sort by Cheapest
+    # ==========================
+
+    results.sort(key=lambda x: x["price"])
+
+
+    print("FINAL RESULTS:", len(results))
+
+
     return jsonify(results)
 
 
+# ==========================
+# Run App (Render Ready)
+# ==========================
 
 if __name__ == "__main__":
 
