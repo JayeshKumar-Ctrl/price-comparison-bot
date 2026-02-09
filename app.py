@@ -47,38 +47,35 @@ def is_relevant(search, title):
 @app.route("/search", methods=["GET", "POST"])
 def search():
 
+    if request.method == "POST":
+        query = request.form.get("query")
+    else:
+        query = request.args.get("item")
+
+    if not query:
+        return "Empty search"
+
+    print("SEARCH:", query)
+
+    API_KEY = os.environ.get("RAPIDAPI_KEY")
+
+    print("API KEY:", API_KEY)
+
+    url = "https://real-time-amazon-data.p.rapidapi.com/search"
+
+    headers = {
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com"
+    }
+
+    params = {
+        "query": query,
+        "page": "1",
+        "country": "IN"
+    }
+
     try:
 
-        # Get query
-        if request.method == "POST":
-            query = request.form.get("query")
-        else:
-            query = request.args.get("item")
-
-        if not query:
-            return jsonify({"error": "Empty search"})
-
-        print("QUERY:", query)
-
-        # Check API key
-        if not RAPIDAPI_KEY:
-            return jsonify({"error": "API key missing"})
-
-        # API URL
-        url = "https://real-time-amazon-data.p.rapidapi.com/search"
-
-        headers = {
-            "X-RapidAPI-Key": RAPIDAPI_KEY,
-            "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com"
-        }
-
-        params = {
-            "query": query,
-            "page": "1",
-            "country": "IN"
-        }
-
-        # Call API
         response = requests.get(
             url,
             headers=headers,
@@ -87,58 +84,23 @@ def search():
         )
 
         print("STATUS:", response.status_code)
+        print("TEXT:", response.text[:1000])
 
         if response.status_code != 200:
-            print("RAW:", response.text)
-            return jsonify({"error": "API failed"})
+            return response.text
 
         data = response.json()
 
-        products = data.get("data", {}).get("products", [])
+        print("JSON:", data)
 
-        print("PRODUCT COUNT:", len(products))
-
-        results = []
-
-        # Process products
-        for item in products[:20]:
-
-            title = item.get("product_title", "")
-
-            if not is_relevant(query, title):
-                continue
-
-            price = item.get("product_price")
-
-            if not price:
-                continue
-
-            link = item.get("product_url", "#")
-
-            results.append({
-                "title": title,
-                "price": price,
-                "link": link,
-                "store": "Amazon"
-            })
-
-        print("RESULTS:", results)
-
-        if len(results) == 0:
-            return jsonify({"error": "No products found"})
-
-        save_log(f"Search: {query} ({len(results)} results)")
-
-        return render_template("index.html", results=results)
+        # TEMP: Show raw data in browser
+        return jsonify(data)
 
     except Exception as e:
 
         print("ERROR:", e)
 
-        return jsonify({
-            "error": "Server error",
-            "details": str(e)
-        })
+        return str(e)
 
 
 # ================== ADMIN ==================
