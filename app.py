@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from flask import Flask, request, render_template, redirect, url_for, session, jsonify
 import requests
 import os
 from datetime import datetime
@@ -7,113 +7,78 @@ app = Flask(__name__)
 app.secret_key = "super_secret_key_123"
 
 
-# ================= ENV VARIABLES =================
+# ================== ENV VARIABLES ==================
 
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
 
 
-# ================= LOG SYSTEM =================
+# ================== LOG SYSTEM ==================
 
 def save_log(msg):
+
     time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     with open("logs.txt", "a") as f:
         f.write(f"[{time}] {msg}\n")
 
 
-# ================= RELEVANCE CHECK =================
-
-def is_relevant(search, title):
-
-    search = search.lower().strip()
-    title = title.lower().strip()
-
-    search_words = search.split()
-
-    score = 0
-
-    for word in search_words:
-
-        if len(word) < 2:
-            continue
-
-        if word in title:
-            score += 2
-
-    if search in title:
-        score += 3
-
-    return score >= 2
-
-
-# ================= AMAZON SEARCH =================
-
-def search_products(query):
-
-    url = "https://real-time-product-search.p.rapidapi.com/search"
-
-    headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": "real-time-product-search.p.rapidapi.com"
-    }
-
-    params = {
-        "q": query,
-        "country": "in",
-        "language": "en"
-    }
-
-    response = requests.get(
-        url,
-        headers=headers,
-        params=params,
-        timeout=20
-    )
-
-    print("STATUS:", response.status_code)
-    print("RAW:", response.text)
-
-    return response.json()
-
-
-# ================= HOME =================
+# ================== HOME ==================
 
 @app.route("/")
 def home():
-    return render_template("index.html", results=[])
+    return render_template("index.html")
 
 
-# ================= SEARCH =================
+# ================== SIMPLE RELEVANCE ==================
+
+def is_relevant(search, title):
+
+    search = search.lower()
+    title = title.lower()
+
+    return search in title
+
+
+# ================== SEARCH ==================
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
 
-    if request.method == "POST":
-        query = request.form.get("query")
-    else:
-        query = request.args.get("item")
-
-    if not query:
-        return jsonify({"error": "Empty search"})
-
-    print("SEARCH QUERY:", query)
-
-    url = "https://real-time-product-search.p.rapidapi.com/search"
-
-    headers = {
-        "X-RapidAPI-Key": os.environ.get("RAPIDAPI_KEY"),
-        "X-RapidAPI-Host": "real-time-product-search.p.rapidapi.com"
-    }
-
-    params = {
-        "q": query,
-        "country": "in",
-        "language": "en"
-    }
-
     try:
+
+        # Get query
+        if request.method == "POST":
+            query = request.form.get("query")
+        else:
+            query = request.args.get("item")
+
+        if not query:
+            return jsonify({"error": "Empty search"})
+
+        print("QUERY:", query)
+
+        # Check API key
+        if not RAPIDAPI_KEY:
+            return jsonify({"error": "API key missing"})
+
+        # API URL
+        url = "https://real-time-amazon-data.p.rapidapi.com/search"
+
+        headers = {
+            "X-RapidAPI-Key": RAPIDAPI_KEY,
+            "X-RapidAPI-Host": "real-time-amazon-data.p.rapidapi.com"
+        }
+
+        params = {
+            "query": query,
+            "page": "1",
+            "country": "IN"
+        }
+
+        # Call API
         response = requests.get(
             url,
             headers=headers,
@@ -122,22 +87,20 @@ def search():
         )
 
         print("STATUS:", response.status_code)
-        print("RAW:", response.text)
 
         if response.status_code != 200:
+            print("RAW:", response.text)
             return jsonify({"error": "API failed"})
 
         data = response.json()
 
-        print("FULL RESPONSE:", data)
+        products = data.get("data", {}).get("products", [])
 
-        # ✅ CORRECT parsing
-        products = data.get("data", [])
-
-        print("TOTAL PRODUCTS:", len(products))
+        print("PRODUCT COUNT:", len(products))
 
         results = []
 
+        # Process products
         for item in products[:20]:
 
             title = item.get("product_title", "")
@@ -145,37 +108,40 @@ def search():
             if not is_relevant(query, title):
                 continue
 
-            offer = item.get("offer", {})
-
-            price = offer.get("price")
+            price = item.get("product_price")
 
             if not price:
                 continue
 
-            link = offer.get("offer_page_url", "#")
-            store = offer.get("store_name", "Unknown")
+            link = item.get("product_url", "#")
 
             results.append({
                 "title": title,
                 "price": price,
                 "link": link,
-                "store": store
+                "store": "Amazon"
             })
 
-        print("FINAL RESULTS:", results)
+        print("RESULTS:", results)
+
+        if len(results) == 0:
+            return jsonify({"error": "No products found"})
+
+        save_log(f"Search: {query} ({len(results)} results)")
 
         return render_template("index.html", results=results)
 
     except Exception as e:
 
-        print("SEARCH ERROR:", str(e))
+        print("ERROR:", e)
 
         return jsonify({
-            "error": "Backend crash",
+            "error": "Server error",
             "details": str(e)
         })
 
-# ================= ADMIN =================
+
+# ================== ADMIN ==================
 
 @app.route("/admin")
 def admin():
@@ -184,7 +150,7 @@ def admin():
         return redirect(url_for("login"))
 
     try:
-        with open("logs.txt") as f:
+        with open("logs.txt", "r") as f:
             logs = f.read()
     except:
         logs = "No logs found"
@@ -196,62 +162,58 @@ def admin():
     """
 
 
-# ================= LOGIN =================
+# ================== LOGIN ==================
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
 
     if request.method == "POST":
 
-        user = request.form.get("username")
-        pwd = request.form.get("password")
+        username = request.form.get("username")
+        password = request.form.get("password")
 
-        if user == ADMIN_USERNAME and pwd == ADMIN_PASSWORD:
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
 
             session["logged_in"] = True
-            save_log("Admin login")
+            save_log("Admin logged in")
 
             return redirect(url_for("admin"))
 
-        return "Invalid credentials"
-
+        else:
+            return "Invalid credentials"
 
     return """
-    <h2>Login</h2>
+    <h2>Admin Login</h2>
 
     <form method="post">
 
-    <input name="username" required><br><br>
+        <input type="text" name="username" placeholder="Username" required><br><br>
 
-    <input type="password" name="password" required><br><br>
+        <input type="password" name="password" placeholder="Password" required><br><br>
 
-    <button>Login</button>
+        <button type="submit">Login</button>
 
     </form>
     """
 
 
-# ================= LOGOUT =================
+# ================== LOGOUT ==================
 
 @app.route("/logout")
 def logout():
 
     session.pop("logged_in", None)
 
-    save_log("Admin logout")
+    save_log("Admin logged out")
 
     return redirect(url_for("login"))
 
 
-# ================= RUN =================
+# ================== RUN ==================
 
 if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 5000))
 
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
-    )
+    app.run(host="0.0.0.0", port=port, debug=False)
 
