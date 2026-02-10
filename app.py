@@ -99,7 +99,7 @@ def search_google(query):
 
         results.append({
             "name": title[:80],
-            "price":999999,   # price unknown now
+            "price":None,   # price unknown now
             "link": link,
             "site": site
         })
