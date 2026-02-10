@@ -80,6 +80,7 @@ def search_google(query):
     try:
         r = requests.get(url, params=params, timeout=20)
         if r.status_code != 200:
+            print("SERPAPI ERROR:", r.text)
             return []
         data = r.json()
     except:
@@ -163,7 +164,7 @@ def search():
 
     if response.status_code != 200:
 
-        print("BAD RESPONSE:", response.text)
+        print("AMAZON ERROR:", response.text)
 
         return jsonify({"error": "API failed"}), 500
 
