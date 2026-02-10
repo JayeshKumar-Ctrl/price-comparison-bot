@@ -28,9 +28,6 @@ def home():
 # ==========================
 
 def clean_title(title, max_len=80):
-    """
-    Shorten very long titles for UI
-    """
     if len(title) > max_len:
         return title[:max_len] + "..."
     return title
@@ -41,14 +38,10 @@ def clean_title(title, max_len=80):
 # ==========================
 
 def is_relevant(search, title):
-    """
-    Check if product matches search
-    """
     search = search.lower()
     title = title.lower()
 
     words = search.split()
-
     score = 0
 
     for w in words:
@@ -56,14 +49,13 @@ def is_relevant(search, title):
             score += 1
 
     return score >= 1
-#===========================
-#GOOGLE:SERPAPI
-#===========================
+
+
+# ==========================
+# GOOGLE: SERPAPI
+# ==========================
 
 def search_google(query):
-    """
-    Get Flipkart/Myntra links via Google (SerpApi)
-    """
 
     if not SERPAPI_KEY:
         return []
@@ -79,15 +71,19 @@ def search_google(query):
 
     try:
         r = requests.get(url, params=params, timeout=20)
+
         if r.status_code != 200:
             print("SERPAPI ERROR:", r.text)
             return []
+
         data = r.json()
-    except:
+
+    except Exception as e:
+        print("SERPAPI REQUEST ERROR:", e)
         return []
 
     results = []
-    organic = data.get("organic_results", [])
+
     for item in data.get("organic_results", []):
 
         title = item.get("title")
@@ -100,12 +96,13 @@ def search_google(query):
 
         results.append({
             "name": title[:80],
-            "price":None,   # price unknown now
+            "price": 0,          # Always number (no None)
             "link": link,
             "site": site
         })
 
     return results
+
 
 # ==========================
 # Search Route
@@ -117,13 +114,15 @@ def search():
     item = request.args.get("item")
 
     if not item:
-        return jsonify({"error": "No item provided"}), 400
+        return jsonify([])
+
 
     print("SEARCH:", item)
 
+
     if not RAPIDAPI_KEY:
         print("ERROR: API KEY MISSING")
-        return jsonify({"error": "Server config error"}), 500
+        return jsonify([])
 
 
     headers = {
@@ -140,7 +139,7 @@ def search():
 
 
     # ==========================
-    # Call API
+    # Call Amazon API
     # ==========================
 
     try:
@@ -152,42 +151,18 @@ def search():
             timeout=20
         )
 
-    except Exception as e:
+        if response.status_code != 200:
+            print("AMAZON ERROR:", response.text)
+            amazon_products = []
 
-        print("REQUEST ERROR:", e)
-
-        return jsonify({"error": "API request failed"}), 500
-
-
-    print("STATUS:", response.status_code)
-
-
-    if response.status_code != 200:
-
-        print("AMAZON ERROR:", response.text)
-
-        return jsonify({"error": "API failed"}), 500
-
-
-    # ==========================
-    # Parse JSON
-    # ==========================
-
-    try:
-        data = response.json()
+        else:
+            data = response.json()
+            amazon_products = data.get("data", {}).get("products", [])
 
     except Exception as e:
 
-        print("JSON ERROR:", e)
-
-        return jsonify({"error": "Invalid API response"}), 500
-
-
-    products = data.get("data", {}).get("products", [])
-
-
-    if not products:
-        return jsonify([])
+        print("AMAZON REQUEST ERROR:", e)
+        amazon_products = []
 
 
     # ==========================
@@ -197,7 +172,7 @@ def search():
     results = []
 
 
-    for p in products:
+    for p in amazon_products:
 
         title = p.get("product_title")
         price_text = p.get("product_price")
@@ -207,17 +182,14 @@ def search():
             continue
 
 
-        # Relevance filter
         if not is_relevant(item, title):
             continue
 
 
-        # Clean price
         clean = price_text.replace("₹", "").replace(",", "").strip()
 
         try:
             price = int(clean)
-
         except:
             continue
 
@@ -233,18 +205,24 @@ def search():
         })
 
 
-        # Limit results
         if len(results) >= 20:
             break
+
+
+    # ==========================
+    # Google Results
+    # ==========================
+
     google_results = search_google(item)
+
     results.extend(google_results)
 
 
     # ==========================
-    # Sort by Cheapest
+    # Sort by Price (Amazon First)
     # ==========================
 
-    results.sort(key=lambda x: x["price"] if x["price"] else 999999)
+    results.sort(key=lambda x: x["price"] if x["price"] > 0 else 999999)
 
 
     print("FINAL RESULTS:", len(results))
@@ -254,7 +232,7 @@ def search():
 
 
 # ==========================
-# Run App (Render Ready)
+# Run App
 # ==========================
 
 if __name__ == "__main__":
