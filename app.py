@@ -243,7 +243,7 @@ def search():
     # Sort by Cheapest
     # ==========================
 
-    results.sort(key=lambda x: x["price"])
+    results.sort(key=lambda x: x["price"] if x["price"] else 999999)
 
 
     print("FINAL RESULTS:", len(results))
