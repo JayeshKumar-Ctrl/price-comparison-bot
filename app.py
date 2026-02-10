@@ -9,6 +9,7 @@ app = Flask(__name__)
 # ==========================
 
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 
 API_URL = "https://real-time-amazon-data.p.rapidapi.com/search"
 
@@ -55,7 +56,55 @@ def is_relevant(search, title):
             score += 1
 
     return score >= 1
+#===========================
+#GOOGLE:SERPAPI
+#===========================
 
+def search_google(query):
+    """
+    Get Flipkart/Myntra links via Google (SerpApi)
+    """
+
+    if not SERPAPI_KEY:
+        return []
+
+    url = "https://serpapi.com/search.json"
+
+    params = {
+        "q": f"{query} site:flipkart.com OR site:myntra.com",
+        "engine": "google",
+        "api_key": SERPAPI_KEY,
+        "num": 10
+    }
+
+    try:
+        r = requests.get(url, params=params, timeout=20)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+    except:
+        return []
+
+    results = []
+    organic = data.get("organic_results", [])
+    for item in data.get("organic_results", []):
+
+        title = item.get("title")
+        link = item.get("link")
+
+        if not title or not link:
+            continue
+
+        site = "Flipkart" if "flipkart" in link else "Myntra"
+
+        results.append({
+            "name": title[:80],
+            "price":999999,   # price unknown now
+            "link": link,
+            "site": site
+        })
+
+    return results
 
 # ==========================
 # Search Route
@@ -186,6 +235,8 @@ def search():
         # Limit results
         if len(results) >= 20:
             break
+    google_results = search_google(item)
+    results.extend(google_results)
 
 
     # ==========================
